@@ -8,10 +8,10 @@ name: release
 #
 # Aqui o release nasce com o repo, e a tag é o gatilho: cortar tag É publicar.
 #
-# ESTE ARQUIVO NASCEU DEPOIS DO APP, e a lacuna é o que ele conserta. O optimizer tinha CI mas
-# nenhum release: `releases/latest/download/` não servia nada, e o app só chegava em quem
-# compilava do fonte. Foi a dívida nº 1 do `schematize_cli_rs`, e repeti-la num app novo seria
-# não ter aprendido.
+# ESTE ARQUIVO NASCE JUNTO COM O APP, e é de propósito: o release não pode ser o que se faz
+# depois. O `schematize_cli_rs` deixou os releases ficarem 19 versões atrás do `main`, e foi
+# essa defasagem que quebrou o `curl | bash` de todo mundo. O optimizer repetiu a lacuna em
+# menor escala (tinha CI e nenhum release). Aqui a tag É a publicação, desde o primeiro dia.
 #
 # A JANELA deste app AINDA NÃO EXISTE (M4 da fase E1). Quando existir, ela entra no MESMO
 # release, como nos irmãos (ADR-0014 D5): o dono do binário é o dono da janela dele. O bloco
@@ -38,7 +38,7 @@ jobs:
           gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 \
             || gh release create "${GITHUB_REF_NAME}" \
                  --title "${GITHUB_REF_NAME}" \
-                 --notes "schematize optimizer ${GITHUB_REF_NAME} — contas, repositórios e o que ainda não saiu da máquina."
+                 --notes "schematize git ${GITHUB_REF_NAME} — contas, repositórios e o que ainda não saiu da máquina."
 
   binarios:
     needs: criar
