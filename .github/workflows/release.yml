@@ -1,0 +1,125 @@
+name: release
+
+# POR QUE ISTO EXISTE
+#
+# Sem release, `releases/latest/download/` não serve nada e o app só chega em quem compila do
+# fonte. Foi a dívida nº 1 do `schematize_cli_rs` — os releases ficaram 19 versões atrás do
+# `main`, e foi essa defasagem que quebrou o `curl | bash` de todo mundo.
+#
+# Aqui o release nasce com o repo, e a tag é o gatilho: cortar tag É publicar.
+#
+# ESTE ARQUIVO NASCEU DEPOIS DO APP, e a lacuna é o que ele conserta. O optimizer tinha CI mas
+# nenhum release: `releases/latest/download/` não servia nada, e o app só chegava em quem
+# compilava do fonte. Foi a dívida nº 1 do `schematize_cli_rs`, e repeti-la num app novo seria
+# não ter aprendido.
+#
+# A JANELA deste app AINDA NÃO EXISTE (M4 da fase E1). Quando existir, ela entra no MESMO
+# release, como nos irmãos (ADR-0014 D5): o dono do binário é o dono da janela dele. O bloco
+# que a compila só entra junto com o repo dela — ver a nota no job, mais abaixo.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  criar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: cria o release (rascunho vira público ao fim)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 \
+            || gh release create "${GITHUB_REF_NAME}" \
+                 --title "${GITHUB_REF_NAME}" \
+                 --notes "schematize optimizer ${GITHUB_REF_NAME} — contas, repositórios e o que ainda não saiu da máquina."
+
+  binarios:
+    needs: criar
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            asset: schematize-git-linux-x86_64
+          # `macos-15` e nao `macos-14`: a 14 ja esta marcada DEPRECATED no
+          # `actions/runner-images` (issue 13518), a caminho do mesmo destino da 13 descrito
+          # logo abaixo. Trocar antes de a imagem sumir custa esta linha.
+          - runner: macos-15
+            asset: schematize-git-macos-arm64
+          # Intel CROSS-COMPILADO no runner arm64, e nao numa imagem macOS x64.
+          #
+          # A familia de imagens x64 do macOS e a que vem sendo aposentada, e o modo de falha
+          # dela e o pior possivel: o job nao reprova, fica *queued* para sempre e segura o
+          # release inteiro. Ja aconteceu neste ecossistema (CONTEXT.md §4) com a `macos-13`;
+          # a `macos-14` esta DEPRECATED agora (actions/runner-images issue 13518); e a
+          # `macos-15-intel`, embora valida, e desconhecida do actionlint 1.7.7 — o que
+          # deixava o gate deste repo vermelho por falso positivo.
+          #
+          # Cross-compilar tira o repo dessa esteira inteira: um runner arm64 so, dois alvos.
+          # E o mesmo desenho que o CLI, o updater e o market ja usam.
+          - runner: macos-15
+            target: x86_64-apple-darwin
+            asset: schematize-git-macos-x86_64
+          - runner: windows-latest
+            asset: schematize-git-windows-x86_64.exe
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-relcargo-${{ hashFiles('**/Cargo.lock') }}
+
+      # `--locked` de propósito: o binário de uma tag tem de vir do lock DAQUELA tag.
+      # Sem isso, recompilar a mesma tag pode dar outro binário — que foi exatamente a
+      # dívida que o `schematize_cli_rs` levou meses para pagar.
+      #
+      # `matrix.target` so existe na linha do Intel cross-compilado; nas outras o build e
+      # nativo e o alvo default do runner ja e o certo.
+      - name: alvo de cross-compilacao
+        if: matrix.target != ''
+        run: rustup target add ${{ matrix.target }}
+
+      - name: build release
+        run: cargo build --release --locked ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
+
+      # A JANELA deste app AINDA NÃO EXISTE, e por isso o bloco dela não está aqui.
+      #
+      # Os irmãos (market, optimizer, deployer) clonam o repo da janela e publicam o binário
+      # dela ao lado. Copiar esse bloco agora criaria um `git clone` de um endereço que não
+      # existe — e, como o passo é `continue-on-error` por desenho, ele falharia EM SILÊNCIO e o
+      # release sairia "verde" com um asset a menos. É exatamente o defeito que custou o v0.2.0
+      # do market, e o que o `scripts/repos-de-janela.py` passou a cobrar.
+      #
+      # Quando a janela existir (M4 da fase E1), o bloco entra junto com o repo dela.
+
+      - name: renomeia p/ o nome estável do asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="target/${{ matrix.target }}/release"
+          [ -n "${{ matrix.target }}" ] || dir="target/release"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp "$dir/schematize-git.exe" "${{ matrix.asset }}"
+          else
+            cp "$dir/schematize-git" "${{ matrix.asset }}"
+          fi
+
+      - name: publica
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: gh release upload "${GITHUB_REF_NAME}" "${{ matrix.asset }}" --clobber

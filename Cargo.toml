@@ -1,0 +1,39 @@
+[package]
+name = "schematize-git"
+version = "0.1.0"
+edition = "2021"
+description = "schematize Git: quem faz push, de onde, e com qual identidade. Mais de uma conta na mesma máquina, sem commitar com a errada."
+license = "MIT"
+
+[lib]
+name = "git_casa"
+path = "src/lib.rs"
+
+[[bin]]
+name = "schematize-git"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+# O cadastro de contas é gravado e lido como JSON, e a janela o consome pelo `--json`.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Encoder PNG — gera o ícone do app A PARTIR DO CÓDIGO, sem asset externo nem rasterizador
+# (que falha em SVG). Mesma escolha dos irmãos.
+png = "0.18"
+
+# Só para devolver o SIGPIPE ao padrão do Unix — ver a nota em `main.rs`.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+# Os testes de contrato leem o `stdout` do binário e PARSEIAM o JSON com um parser estrito —
+# um teste que casasse substring aprovaria JSON quebrado.
+serde_json = "1"
+
+# Perfil IDÊNTICO ao dos outros repos do app: o install.sh compila todos com um
+# `CARGO_TARGET_DIR` único, e cargo só reaproveita artefato se o perfil bater EXATAMENTE.
+[profile.release]
+strip = true
+opt-level = 3
+lto = "thin"
