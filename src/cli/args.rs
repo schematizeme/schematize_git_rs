@@ -90,7 +90,11 @@ pub enum Cmd {
     },
     /// Commits of the current project, marking the ones already pushed.
     Log {
-        #[arg(long, default_value_t = 20)]
+        /// **`--limit` é alias de `--limite`, e não enfeite.** O hub tinha um `schematize
+        /// git-log --limit N` de topo; ele agora é encaminhado para cá com o prefixo trocado
+        /// (`log`), e as flags viajam CRUAS. Sem o alias, um comando que alguém já tem no dedo
+        /// morreria em "unexpected argument" depois da extradição.
+        #[arg(long, alias = "limit", default_value_t = 20)]
         limite: usize,
         #[arg(long)]
         json: bool,
