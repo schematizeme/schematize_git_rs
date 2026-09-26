@@ -13,6 +13,13 @@ path = "src/lib.rs"
 name = "schematize-git"
 path = "src/main.rs"
 
+# UM repo, DOIS binários (ADR-0020). A janela sai do MESMO commit que o CLI, então não há
+# `git clone` no release, nem pino cruzado para envelhecer, nem CI compilando contra uma versão
+# diferente da que o release usa — as três classes de falha que o repo de janela separado custou.
+[[bin]]
+name = "schematize-git-gui"
+path = "src/gui/main.rs"
+
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 # O cadastro de contas é gravado e lido como JSON, e a janela o consome pelo `--json`.
@@ -21,6 +28,15 @@ serde_json = "1"
 # Encoder PNG — gera o ícone do app A PARTIR DO CÓDIGO, sem asset externo nem rasterizador
 # (que falha em SVG). Mesma escolha dos irmãos.
 png = "0.18"
+# Toolkit da JANELA. Mesmo backend das irmãs: winit cobre Wayland E X11, renderer femtovg, sem
+# skia (que exigiria cmake). Só o binário `-gui` o usa.
+slint = { version = "1.17", default-features = false, features = [
+    "std",
+    "compat-1-2",
+    "backend-winit",
+    "renderer-femtovg",
+    "accessibility",
+] }
 
 # Só para devolver o SIGPIPE ao padrão do Unix — ver a nota em `main.rs`.
 [target.'cfg(unix)'.dependencies]
@@ -37,3 +53,7 @@ serde_json = "1"
 strip = true
 opt-level = 3
 lto = "thin"
+
+[build-dependencies]
+# Compila o `.slint` da janela. Só o build precisa dele.
+slint-build = "1.17"

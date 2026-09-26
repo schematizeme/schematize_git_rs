@@ -13,9 +13,13 @@ name: release
 # essa defasagem que quebrou o `curl | bash` de todo mundo. O optimizer repetiu a lacuna em
 # menor escala (tinha CI e nenhum release). Aqui a tag É a publicação, desde o primeiro dia.
 #
-# A JANELA deste app AINDA NÃO EXISTE (M4 da fase E1). Quando existir, ela entra no MESMO
-# release, como nos irmãos (ADR-0014 D5): o dono do binário é o dono da janela dele. O bloco
-# que a compila só entra junto com o repo dela — ver a nota no job, mais abaixo.
+# A JANELA SAI DAQUI MESMO, e é o ponto do ADR-0020. Ela é o segundo `[[bin]]` deste repo, então
+# `cargo build --release` já a produz: **não há `git clone` de repo de janela neste arquivo**.
+#
+# Nos irmãos (market, optimizer, deployer) esse clone existe e é `continue-on-error` por desenho —
+# a janela é acessório e não deve derrubar o release do CLI. O preço apareceu inteiro: dois repos
+# davam 404 e o release saía VERDE com um asset a menos, em silêncio. Sem clone, esse modo de
+# falha não existe aqui: ou os dois binários saem do mesmo commit, ou o job reprova.
 
 on:
   push:
@@ -48,11 +52,13 @@ jobs:
         include:
           - runner: ubuntu-latest
             asset: schematize-git-linux-x86_64
+            asset_gui: schematize-git-gui-linux-x86_64
           # `macos-15` e nao `macos-14`: a 14 ja esta marcada DEPRECATED no
           # `actions/runner-images` (issue 13518), a caminho do mesmo destino da 13 descrito
           # logo abaixo. Trocar antes de a imagem sumir custa esta linha.
           - runner: macos-15
             asset: schematize-git-macos-arm64
+            asset_gui: schematize-git-gui-macos-arm64
           # Intel CROSS-COMPILADO no runner arm64, e nao numa imagem macOS x64.
           #
           # A familia de imagens x64 do macOS e a que vem sendo aposentada, e o modo de falha
@@ -67,11 +73,26 @@ jobs:
           - runner: macos-15
             target: x86_64-apple-darwin
             asset: schematize-git-macos-x86_64
+            asset_gui: schematize-git-gui-macos-x86_64
           - runner: windows-latest
             asset: schematize-git-windows-x86_64.exe
+            asset_gui: schematize-git-gui-windows-x86_64.exe
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
+
+      # Só no Linux: macOS e Windows linkam o Slint contra o SDK do próprio sistema.
+      - name: deps de sistema (Slint)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            pkg-config \
+            libx11-dev libxcursor-dev libxrandr-dev libxi-dev \
+            libxkbcommon-dev libwayland-dev libgl1-mesa-dev \
+            libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libfontconfig1-dev
+
       - uses: dtolnay/rust-toolchain@stable
 
       - name: cache cargo
@@ -96,16 +117,6 @@ jobs:
       - name: build release
         run: cargo build --release --locked ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
 
-      # A JANELA deste app AINDA NÃO EXISTE, e por isso o bloco dela não está aqui.
-      #
-      # Os irmãos (market, optimizer, deployer) clonam o repo da janela e publicam o binário
-      # dela ao lado. Copiar esse bloco agora criaria um `git clone` de um endereço que não
-      # existe — e, como o passo é `continue-on-error` por desenho, ele falharia EM SILÊNCIO e o
-      # release sairia "verde" com um asset a menos. É exatamente o defeito que custou o v0.2.0
-      # do market, e o que o `scripts/repos-de-janela.py` passou a cobrar.
-      #
-      # Quando a janela existir (M4 da fase E1), o bloco entra junto com o repo dela.
-
       - name: renomeia p/ o nome estável do asset
         shell: bash
         run: |
@@ -113,13 +124,21 @@ jobs:
           dir="target/${{ matrix.target }}/release"
           [ -n "${{ matrix.target }}" ] || dir="target/release"
           if [ "${{ runner.os }}" = "Windows" ]; then
-            cp "$dir/schematize-git.exe" "${{ matrix.asset }}"
+            cp "$dir/schematize-git.exe"     "${{ matrix.asset }}"
+            cp "$dir/schematize-git-gui.exe" "${{ matrix.asset_gui }}"
           else
-            cp "$dir/schematize-git" "${{ matrix.asset }}"
+            cp "$dir/schematize-git"     "${{ matrix.asset }}"
+            cp "$dir/schematize-git-gui" "${{ matrix.asset_gui }}"
           fi
+          # **Sem `|| true` em nenhum dos `cp`, e é deliberado.** Janela que não compilou tem de
+          # reprovar o job: publicar o CLI sem a janela é o release "verde com um asset a menos"
+          # que este repo foi desenhado para não repetir.
 
       - name: publica
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
-        run: gh release upload "${GITHUB_REF_NAME}" "${{ matrix.asset }}" --clobber
+        run: |
+          set -euo pipefail
+          gh release upload "${GITHUB_REF_NAME}" \
+            "${{ matrix.asset }}" "${{ matrix.asset_gui }}" --clobber

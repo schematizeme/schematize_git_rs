@@ -95,4 +95,16 @@ pub enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Desktop integration: put this app in the applications menu, or take it out.
+    ///
+    /// **O app instala a PRÓPRIA integração** (ADR-0019): quem baixa o binário do release ou
+    /// compila do fonte tem de conseguir o ícone também, sem passar pelo hub.
+    Desktop {
+        /// Write the icon and the .desktop entry.
+        #[arg(long)]
+        install: bool,
+        /// Remove the .desktop entry (the icons stay — they are inert and shared).
+        #[arg(long)]
+        remover: bool,
+    },
 }

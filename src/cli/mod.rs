@@ -10,6 +10,7 @@
 //! (a janela dizendo "não instalado" sobre o que o terminal listava como instalado).
 
 pub mod args;
+pub mod desktop;
 pub mod saidajson;
 
 use args::Cmd;
@@ -41,6 +42,7 @@ pub fn executar(cmd: Cmd) -> Result<(), String> {
         Cmd::Repos { rotulo, limite, json } => listar_repos(rotulo, limite, json),
         Cmd::Status { dirs, json } => status(dirs, json),
         Cmd::Log { limite, json } => log(limite, json),
+        Cmd::Desktop { install, remover } => desktop::executar(install, remover),
     }
 }
 

@@ -41,4 +41,7 @@ fn main() {
     // cobre o commit na mesma branch.
     println!("cargo:rerun-if-changed=.git/HEAD");
     println!("cargo:rerun-if-changed=.git/refs/heads");
+
+    // A JANELA. `slint_build` já emite o `rerun-if-changed` do `.slint` e dos que ele importa.
+    slint_build::compile("ui/git.slint").expect("compilar ui/git.slint");
 }

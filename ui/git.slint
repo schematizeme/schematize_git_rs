@@ -1,0 +1,350 @@
+import { LineEdit, ScrollView } from "std-widgets.slint";
+
+// Janela do schematize-git. Casca visual fina: todos os dados vêm do binário
+// `schematize-git` (headless), por `--json`, e as ações que escrevem abrem TERMINAL.
+//
+// O TEMA e o `Btn` são cópia das janelas irmãs. Isso é PLATAFORMA (D4): não sabem o que é
+// tabela, coluna ou FK — sabem cor, borda e clique. Se um dia algo de domínio migrar para cá,
+// o corte foi feito errado.
+
+global Th {
+    in-out property <bool> dark: true;
+    out property <color> bg:          dark ? #14161c : #e8ecf4;
+    out property <color> surface:     dark ? #1b1e27 : #ffffff;
+    out property <color> surface-2:   dark ? #222634 : #dce3f0;
+    out property <color> border:      dark ? #2b3040 : #bfc9dc;
+    out property <color> text:        dark ? #e6e9f2 : #12151d;
+    out property <color> text-dim:    dark ? #8a90a2 : #475062;
+    out property <color> accent:      #5b8cff;
+    out property <color> accent-soft: dark ? #2a3a66 : #cedcff;
+    out property <color> good:        #3ecf8e;
+    out property <color> warn:        #e6b23a;
+    out property <color> header-fg:   dark ? #9db4ff : #2b48bd;
+}
+
+component Btn inherits Rectangle {
+    in property <string> label;
+    in property <bool> primary: false;
+    in property <bool> enabled: true;
+    callback clicked();
+    height: 38px;
+    border-radius: 9px;
+    border-width: primary ? 0px : 1px;
+    border-color: Th.border;
+    background: !enabled ? Th.surface-2
+        : primary ? (touch.has-hover ? #6f9bff : Th.accent)
+        : (touch.has-hover ? Th.accent-soft : Th.surface);
+    opacity: enabled ? 1.0 : 0.5;
+    animate background { duration: 120ms; }
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        Text {
+            text: label;
+            vertical-alignment: center;
+            horizontal-alignment: center;
+            color: primary ? #ffffff : Th.text;
+            font-size: 13.5px;
+            font-weight: 600;
+        }
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => { root.clicked(); }
+    }
+}
+
+export struct ProjetoUI {
+    nome: string,
+    raiz: string,
+    conta: string,
+    remoto: string,
+    nao-enviados: int,
+    sujo: bool,
+    // Calculado no Rust, não aqui: a regra "sem remoto também é risco" tem teste do lado de lá,
+    // e reimplementá-la no .slint criaria duas leis para o mesmo fato.
+    risco: bool,
+}
+export struct ContaUI {
+    rotulo: string,
+    usuario: string,
+    email: string,
+    servico: string,
+    chave: string,
+    alias-ok: bool,
+}
+export struct RepoUI { caminho: string, privado: bool, descricao: string, atualizado: string }
+export struct ContaReposUI { rotulo: string, repos: [RepoUI], erro: string }
+
+// Um projeto e o que dele não saiu daqui.
+component FichaProjeto inherits Rectangle {
+    in property <ProjetoUI> p;
+    border-radius: 10px;
+    border-width: 1px;
+    // A BORDA é o sinal, não a cor do texto: quem varre a lista vê a moldura antes de ler.
+    border-color: p.risco ? Th.warn : Th.border;
+    background: Th.surface;
+    height: corpo.preferred-height;
+    corpo := VerticalLayout {
+        padding: 12px;
+        spacing: 5px;
+        HorizontalLayout {
+            spacing: 8px;
+            Text { text: p.nome; font-size: 14px; font-weight: 800; color: Th.text; }
+            if p.sujo: Text { text: "sujo"; font-size: 11.5px; font-weight: 700; color: Th.warn; }
+            Rectangle { horizontal-stretch: 1; }
+            Text {
+                text: p.conta == "" ? "sem conta" : p.conta;
+                font-size: 12px;
+                color: p.conta == "" ? Th.text-dim : Th.accent;
+            }
+        }
+        Text { text: p.raiz; font-size: 11.5px; color: Th.text-dim; }
+        // Os DOIS estados de risco têm frases próprias. "0 commits não enviados" num
+        // repositório sem remoto seria a tela dizendo que está tudo bem no caso pior.
+        if p.remoto == "": Text {
+            text: "SEM REMOTO — nada daqui jamais saiu desta máquina";
+            font-size: 12px;
+            font-weight: 700;
+            color: Th.warn;
+            wrap: word-wrap;
+        }
+        if p.remoto != "" && p.nao-enviados > 0: Text {
+            text: p.nao-enviados + " commit(s) que só existem nesta máquina";
+            font-size: 12px;
+            font-weight: 700;
+            color: Th.warn;
+        }
+        if p.remoto != "": Text { text: p.remoto; font-size: 11.5px; color: Th.text-dim; }
+    }
+}
+
+export component MainWindow inherits Window {
+    title: "schematize · git";
+    preferred-width: 900px;
+    preferred-height: 680px;
+    min-width: 640px;
+    min-height: 480px;
+    background: Th.bg;
+
+    in-out property <bool> dark <=> Th.dark;
+    // 0 = Projetos · 1 = Contas · 2 = Repositórios
+    in-out property <int> aba: 0;
+    in-out property <string> versao: "—";
+
+    in-out property <[ProjetoUI]> projetos;
+    in-out property <[ContaUI]> contas;
+    in-out property <[ContaReposUI]> repos;
+    in-out property <string> resumo;
+    in-out property <string> erro;
+    in-out property <string> msg;
+    in-out property <bool> carregando: false;
+    // Quantas contas o `detect` achou nesta máquina e que ainda não estão cadastradas.
+    in-out property <int> sugestoes: 0;
+
+    callback recarregar();
+    callback carregar-repos();
+    callback alternar-tema();
+    // Aplicar identidade e escrever alias MUDAM a máquina (e podem pedir credencial):
+    // abrem TERMINAL (D6). A janela não faz nem uma coisa nem outra.
+    callback usar-conta(string);
+    callback escrever-alias(string);
+    callback cadastrar();
+
+    VerticalLayout {
+        padding: 18px;
+        spacing: 12px;
+
+        HorizontalLayout {
+            spacing: 10px;
+            VerticalLayout {
+                Text { text: "Git"; color: Th.header-fg; font-size: 20px; font-weight: 800; }
+                Text { text: root.versao; font-size: 11.5px; color: Th.text-dim; }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            Btn { label: "Projetos"; primary: root.aba == 0; clicked => { root.aba = 0; } }
+            Btn { label: "Contas"; primary: root.aba == 1; clicked => { root.aba = 1; } }
+            Btn {
+                label: "Repositórios";
+                primary: root.aba == 2;
+                clicked => { root.aba = 2; root.carregar-repos(); }
+            }
+            Btn { label: root.dark ? "☾" : "☀"; clicked => { root.alternar-tema(); } }
+        }
+
+        Rectangle { height: 1px; background: Th.border; }
+
+        if root.erro != "": Rectangle {
+            height: le.preferred-height + 16px;
+            border-radius: 9px;
+            border-width: 1px;
+            border-color: Th.warn;
+            background: Th.surface;
+            le := HorizontalLayout {
+                padding: 8px;
+                Text { text: root.erro; font-size: 12.5px; color: Th.warn; wrap: word-wrap; }
+            }
+        }
+        if root.msg != "": Text { text: root.msg; font-size: 12px; color: Th.good; wrap: word-wrap; }
+
+        // ---- ABA PROJETOS ----
+        if root.aba == 0: VerticalLayout {
+            vertical-stretch: 1;
+            spacing: 8px;
+            HorizontalLayout {
+                spacing: 8px;
+                Text {
+                    text: root.resumo;
+                    font-size: 12.5px;
+                    font-weight: 700;
+                    color: Th.text;
+                    vertical-alignment: center;
+                }
+                Rectangle { horizontal-stretch: 1; }
+                Btn { label: "Reler"; clicked => { root.recarregar(); } }
+            }
+            Text {
+                text: "Git não guarda histórico de push — mas guarda o que ainda NÃO foi enviado. Commit que só existe nesta máquina some com a máquina.";
+                font-size: 11.5px;
+                color: Th.text-dim;
+                wrap: word-wrap;
+            }
+            ScrollView {
+                vertical-stretch: 1;
+                VerticalLayout {
+                    spacing: 8px;
+                    for p in root.projetos: FichaProjeto { p: p; }
+                }
+            }
+        }
+
+        // ---- ABA CONTAS ----
+        if root.aba == 1: VerticalLayout {
+            vertical-stretch: 1;
+            spacing: 8px;
+            HorizontalLayout {
+                spacing: 8px;
+                Text {
+                    text: "Quem trabalha com mais de uma conta empurra commit com a identidade errada — e no GitHub isso é público.";
+                    font-size: 11.5px;
+                    color: Th.text-dim;
+                    wrap: word-wrap;
+                    vertical-alignment: center;
+                }
+                Rectangle { horizontal-stretch: 1; }
+                Btn { label: "Cadastrar"; primary: true; clicked => { root.cadastrar(); } }
+            }
+            // A tela vazia DIZ o que o app já sabe: o `detect` lê conta do gh, do git config,
+            // do ~/.ssh/config e do e-mail dos repositórios. "Nenhuma conta cadastrada" sozinho
+            // era meia-verdade, e mandava digitar do zero o que o programa já leu (§37.48).
+            if root.contas.length == 0 && root.erro == "" && root.sugestoes > 0: Text {
+                text: "Nenhuma conta cadastrada — mas encontrei " + root.sugestoes + " nesta máquina (gh, git config, ~/.ssh, e-mail dos repositórios). «Cadastrar» mostra cada uma e pergunta quais registrar.";
+                font-size: 12.5px;
+                color: Th.good;
+                wrap: word-wrap;
+            }
+            if root.contas.length == 0 && root.erro == "" && root.sugestoes == 0: Text {
+                text: "Nenhuma conta cadastrada, e não achei nenhuma nesta máquina. «Cadastrar» abre um terminal — o cadastro pergunta os dados e nunca guarda chave nem token.";
+                font-size: 12.5px;
+                color: Th.text-dim;
+                wrap: word-wrap;
+            }
+            ScrollView {
+                vertical-stretch: 1;
+                VerticalLayout {
+                    spacing: 8px;
+                    for c in root.contas: Rectangle {
+                        border-radius: 10px;
+                        border-width: 1px;
+                        border-color: Th.border;
+                        background: Th.surface;
+                        height: cc.preferred-height;
+                        cc := VerticalLayout {
+                            padding: 12px;
+                            spacing: 5px;
+                            HorizontalLayout {
+                                spacing: 8px;
+                                Text { text: c.rotulo; font-size: 14px; font-weight: 800; color: Th.text; }
+                                Text { text: c.servico; font-size: 12px; color: Th.text-dim; }
+                                Rectangle { horizontal-stretch: 1; }
+                                Text {
+                                    text: c.alias-ok ? "alias ok" : "sem alias SSH";
+                                    font-size: 11.5px;
+                                    font-weight: 700;
+                                    color: c.alias-ok ? Th.good : Th.warn;
+                                }
+                            }
+                            Text { text: c.usuario + " · " + c.email; font-size: 12px; color: Th.text-dim; }
+                            Text {
+                                text: c.chave == "" ? "autentica pelo gh" : "chave: ~/.ssh/" + c.chave;
+                                font-size: 11.5px;
+                                color: Th.text-dim;
+                            }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                // As duas MUDAM a máquina — vão para o terminal (D6).
+                                Btn {
+                                    label: "Usar neste diretório";
+                                    clicked => { root.usar-conta(c.rotulo); }
+                                }
+                                if !c.alias-ok: Btn {
+                                    label: "Escrever alias SSH";
+                                    clicked => { root.escrever-alias(c.rotulo); }
+                                }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ---- ABA REPOSITÓRIOS ----
+        if root.aba == 2: VerticalLayout {
+            vertical-stretch: 1;
+            spacing: 8px;
+            HorizontalLayout {
+                spacing: 8px;
+                Text {
+                    text: root.carregando ? "consultando o gh…" : "Repositórios de cada conta, lidos pelo gh.";
+                    font-size: 12px;
+                    color: Th.text-dim;
+                    vertical-alignment: center;
+                }
+                Rectangle { horizontal-stretch: 1; }
+                Btn { label: "Reler"; enabled: !root.carregando; clicked => { root.carregar-repos(); } }
+            }
+            ScrollView {
+                vertical-stretch: 1;
+                VerticalLayout {
+                    spacing: 10px;
+                    for g in root.repos: VerticalLayout {
+                        spacing: 4px;
+                        Text { text: g.rotulo; font-size: 13px; font-weight: 800; color: Th.accent; }
+                        // O erro é POR CONTA: uma conta sem gh logado não apaga as outras.
+                        if g.erro != "": Text {
+                            text: "  " + g.erro;
+                            font-size: 12px;
+                            color: Th.warn;
+                            wrap: word-wrap;
+                        }
+                        for r in g.repos: HorizontalLayout {
+                            spacing: 8px;
+                            Text { text: "  " + r.caminho; font-size: 12.5px; color: Th.text; width: 280px; }
+                            Text {
+                                text: r.privado ? "privado" : "público";
+                                font-size: 11.5px;
+                                color: r.privado ? Th.warn : Th.text-dim;
+                                width: 70px;
+                            }
+                            Text { text: r.descricao; font-size: 12px; color: Th.text-dim; }
+                            Rectangle { horizontal-stretch: 1; }
+                            Text { text: r.atualizado; font-size: 11.5px; color: Th.text-dim; }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
