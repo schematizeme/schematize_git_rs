@@ -137,6 +137,28 @@ pub fn baixar_com_curl(url: &str, dst: &Path) -> Result<(), String> {
     }
 }
 
+/// **O quê:** repete uma execução enquanto o kernel responde `ETXTBSY` ("Text file busy", errno 26).
+///
+/// **Onde:** a validação `--version` do binário recém-gravado (`<dst>.novo`), em [`validar_executavel`].
+///
+/// **Por quê:** com outra thread fazendo `fork` em paralelo, o filho herda por instantes o
+/// descritor de escrita do arquivo que acabou de ser gravado e o `exec` falha com 26. É transitório:
+/// só em unix e só nesse errno repete (até 40 vezes, backoff de 5 a 25 ms); qualquer outro erro
+/// sai na hora, com a causa.
+fn repetir_em_etxtbsy<T>(mut f: impl FnMut() -> std::io::Result<T>) -> std::io::Result<T> {
+    const ETXTBSY: i32 = 26;
+    let mut tentativa: u64 = 0;
+    loop {
+        match f() {
+            Err(e) if cfg!(unix) && e.raw_os_error() == Some(ETXTBSY) && tentativa < 40 => {
+                tentativa += 1;
+                std::thread::sleep(std::time::Duration::from_millis(5 * tentativa.min(5)));
+            }
+            r => return r,
+        }
+    }
+}
+
 /// **O quê:** dá `chmod +x` (unix) e exige que `<p> --version` saia com 0.
 ///
 /// **Onde:** validação real passada a [`instalar`], antes do `rename`.
@@ -147,14 +169,16 @@ pub fn validar_executavel(p: &Path) -> Result<(), String> {
         fs::set_permissions(p, fs::Permissions::from_mode(0o755))
             .map_err(|e| format!("chmod: {e}"))?;
     }
-    let st = Command::new(p)
-        .arg("--version")
-        .env("SCHEMATIZE_SEM_MARKET", "1")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map_err(|e| format!("binário baixado não executa: {e}"))?;
+    let st = repetir_em_etxtbsy(|| {
+        Command::new(p)
+            .arg("--version")
+            .env("SCHEMATIZE_SEM_MARKET", "1")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+    })
+    .map_err(|e| format!("binário baixado não executa: {e}"))?;
     if st.success() {
         Ok(())
     } else {
