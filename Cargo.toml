@@ -19,6 +19,9 @@ path = "src/main.rs"
 [[bin]]
 name = "schematize-git-gui"
 path = "src/gui/main.rs"
+# A janela só existe com a feature `gui` (default). Sem ela (CLI puro, ex.: FreeBSD) o bin some
+# do build e o Slint nem entra no grafo.
+required-features = ["gui"]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
@@ -30,7 +33,7 @@ serde_json = "1"
 png = "0.18"
 # Toolkit da JANELA. Mesmo backend das irmãs: winit cobre Wayland E X11, renderer femtovg, sem
 # skia (que exigiria cmake). Só o binário `-gui` o usa.
-slint = { version = "1.17", default-features = false, features = [
+slint = { optional = true, version = "1.17", default-features = false, features = [
     "std",
     "compat-1-2",
     "backend-winit",
@@ -56,4 +59,10 @@ lto = "thin"
 
 [build-dependencies]
 # Compila o `.slint` da janela. Só o build precisa dele.
-slint-build = "1.17"
+slint-build = { version = "1.17", optional = true }
+
+[features]
+# Janela (Slint), ligada por padrão. `--no-default-features` gera só o CLI, sem toolkit gráfico
+# (FreeBSD: fontconfig-sys não compila na VM e o CLI não precisa dele).
+default = ["gui"]
+gui = ["dep:slint", "dep:slint-build"]

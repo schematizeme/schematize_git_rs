@@ -68,5 +68,7 @@ fn main() {
     }
 
     // A JANELA. `slint_build` já emite o `rerun-if-changed` do `.slint` e dos que ele importa.
+    // Só com a feature `gui`: o CLI puro (ex.: FreeBSD) não carrega o Slint.
+    #[cfg(feature = "gui")]
     slint_build::compile("ui/git.slint").expect("compilar ui/git.slint");
 }
