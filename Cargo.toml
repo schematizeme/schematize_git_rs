@@ -1,6 +1,6 @@
 [package]
 name = "schematize-git"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 description = "schematize Git: quem faz push, de onde, e com qual identidade. Mais de uma conta na mesma máquina, sem commitar com a errada."
 license = "MIT"
