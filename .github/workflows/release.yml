@@ -168,12 +168,23 @@ jobs:
           usesh: true
           copyback: true
           prepare: |
-            pkg install -y rust git curl pkgconf libX11 libXcursor libXrandr libXi \
+            pkg install -y git curl pkgconf libX11 libXcursor libXrandr libXi \
               libxkbcommon wayland mesa-libs libxcb fontconfig dejavu
           run: |
             set -eu
+            # Toolchain via rustup: o rustc do pkg do FreeBSD 14.2 e antigo demais (lockfile v4, MSRV do Slint).
+            fetch -o /tmp/rustup.sh https://sh.rustup.rs
+            sh /tmp/rustup.sh -y --profile minimal --default-toolchain stable
+            PATH="$HOME/.cargo/bin:$PATH"; export PATH
+            rustc --version; cargo --version
+            # cb: roda cargo com log; se falhar, ecoa as ultimas 40 linhas como ::error:: (annotation legivel).
+            cb() {
+              if cargo "$@" > /tmp/build.log 2>&1; then return 0; fi
+              tail -40 /tmp/build.log | sed 's/^/::error::/'
+              return 1
+            }
             export CARGO_TARGET_DIR=/tmp/alvo
-            cargo build --release --locked --bin schematize-git
+            cb build --release --locked --bin schematize-git
             cp /tmp/alvo/release/schematize-git ./$ASSET
             test -s ./$ASSET
             # O binário TEM de executar num FreeBSD de verdade antes de ser publicado.
@@ -188,7 +199,7 @@ jobs:
             esac
             # A JANELA é best-effort: se não compilar, o release NÃO falha (o CLI é o que
             # precisa chegar). Reaproveita o target do CLI, então só compila o que falta.
-            if cargo build --release --locked --bin schematize-git-gui; then
+            if cb build --release --locked --bin schematize-git-gui; then
               cp /tmp/alvo/release/schematize-git-gui ./$ASSET_GUI
             else
               echo "janela não compilou no FreeBSD — segue só com o CLI" >&2
