@@ -142,3 +142,69 @@ jobs:
           set -euo pipefail
           gh release upload "${GITHUB_REF_NAME}" \
             "${{ matrix.asset }}" "${{ matrix.asset_gui }}" --clobber
+
+  # FreeBSD x86_64 — job PRÓPRIO: o runner não é FreeBSD, e `fail-fast` da matriz `binarios`
+  # nem se aplica aqui. FreeBSD falhar NÃO cancela os outros assets (e o contrário também).
+  # O binário TEM de executar num FreeBSD de verdade antes de ser publicado: um asset que baixa
+  # com HTTP 200 e não executa só falha na máquina de quem instalou. Por isso o smoke
+  # (`--version` numa VM FreeBSD 14.2) é parte do release, não enfeite.
+  # Tudo PINADO: a VM por SHA de commit (tag v1.5.9) e o release do FreeBSD fixo.
+  build-freebsd:
+    needs: criar
+    runs-on: ubuntu-latest
+    env:
+      ASSET: schematize-git-freebsd-x86_64
+      ASSET_GUI: schematize-git-gui-freebsd-x86_64
+    steps:
+      - uses: actions/checkout@v4
+      # CLI e janela moram no MESMO pacote, e o pacote depende do Slint (fontconfig-sys etc.), que
+      # NÃO cross-compila (pkg-config sem sysroot do alvo). Por isso aqui tudo compila NATIVO na
+      # VM FreeBSD — um build só, o CLI primeiro (obrigatório, com smoke) e a janela depois.
+      - name: Build + smoke (VM FreeBSD)
+        uses: vmactions/freebsd-vm@c46abacb49f09938ca4e1702d15d836285d694cc # v1.5.9
+        with:
+          envs: "ASSET ASSET_GUI"
+          release: "14.2"
+          usesh: true
+          copyback: true
+          prepare: |
+            pkg install -y rust git curl pkgconf libX11 libXcursor libXrandr libXi \
+              libxkbcommon wayland mesa-libs libxcb fontconfig dejavu
+          run: |
+            set -eu
+            export CARGO_TARGET_DIR=/tmp/alvo
+            cargo build --release --locked --bin schematize-git
+            cp /tmp/alvo/release/schematize-git ./$ASSET
+            test -s ./$ASSET
+            # O binário TEM de executar num FreeBSD de verdade antes de ser publicado.
+            uname -sr
+            [ "$(uname -s)" = "FreeBSD" ]
+            chmod +x ./$ASSET
+            out="$(SCHEMATIZE_SEM_MARKET=1 ./$ASSET --version)"
+            echo "$out"
+            case "$out" in
+              schematize-git\ *) ;;
+              *) echo "saída de --version inesperada: $out" >&2; exit 1 ;;
+            esac
+            # A JANELA é best-effort: se não compilar, o release NÃO falha (o CLI é o que
+            # precisa chegar). Reaproveita o target do CLI, então só compila o que falta.
+            if cargo build --release --locked --bin schematize-git-gui; then
+              cp /tmp/alvo/release/schematize-git-gui ./$ASSET_GUI
+            else
+              echo "janela não compilou no FreeBSD — segue só com o CLI" >&2
+            fi
+      - name: A janela compilou?
+        id: janela
+        continue-on-error: true
+        run: test -s "$ASSET_GUI"
+
+      - name: publica
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${GITHUB_REF_NAME}" "$ASSET" --clobber
+
+      - name: publica a janela
+        if: steps.janela.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${GITHUB_REF_NAME}" "$ASSET_GUI" --clobber

@@ -80,14 +80,17 @@ fn faltam_em(pasta: &Path, os: &str) -> Vec<&'static str> {
 }
 
 /// **O quê:** URL do asset do release `latest` para o binário e a plataforma, ou `None` se a
-/// plataforma não tem asset publicado (publicados: linux x86_64, macos x86_64/arm64, windows
-/// x86_64).
+/// plataforma não tem asset publicado (publicados: linux x86_64, freebsd x86_64, macos
+/// x86_64/arm64, windows x86_64).
 ///
 /// **Onde:** [`instalar`].
 pub fn url_do_asset(nome: &str, os: &str, arch: &str) -> Option<String> {
     let publicado = matches!(
         (os, arch),
-        ("linux", "x86_64") | ("macos", "x86_64") | ("macos", "arm64") | ("windows", "x86_64")
+        ("linux" | "freebsd", "x86_64")
+            | ("macos", "x86_64")
+            | ("macos", "arm64")
+            | ("windows", "x86_64")
     );
     if !publicado {
         return None;
@@ -98,13 +101,14 @@ pub fn url_do_asset(nome: &str, os: &str, arch: &str) -> Option<String> {
     ))
 }
 
-/// **O quê:** `os` no vocabulário do release (`linux|macos|windows`).
+/// **O quê:** `os` no vocabulário do release (`linux|freebsd|macos|windows`).
 ///
 /// **Onde:** [`o_que_falta`] e [`garantir_no_inicio`].
 fn os_atual() -> &'static str {
     match std::env::consts::OS {
         "macos" => "macos",
         "windows" => "windows",
+        "freebsd" => "freebsd",
         _ => "linux",
     }
 }
@@ -414,6 +418,15 @@ mod testes {
             url_do_asset(MARKET_GUI, "windows", "x86_64").unwrap(),
             format!("{base}/schematize-market-gui-windows-x86_64.exe")
         );
+        assert_eq!(
+            url_do_asset(MARKET_CLI, "freebsd", "x86_64").unwrap(),
+            format!("{base}/schematize-market-freebsd-x86_64")
+        );
+        assert_eq!(
+            url_do_asset(MARKET_GUI, "freebsd", "x86_64").unwrap(),
+            format!("{base}/schematize-market-gui-freebsd-x86_64")
+        );
+        assert!(url_do_asset(MARKET_CLI, "freebsd", "arm64").is_none());
         assert!(url_do_asset(MARKET_CLI, "linux", "arm64").is_none());
     }
 
