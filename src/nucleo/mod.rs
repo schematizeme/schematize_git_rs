@@ -9,10 +9,11 @@
 //! linhas. O duplicado aqui não sabe **nada** do negócio — se um dia algo de domínio migrar para
 //! esta pasta, o corte foi feito errado.
 
-pub mod bin;
 pub mod config;
 pub mod desktop;
 pub mod icone;
-pub mod market_parasita;
 pub mod procedencia;
 pub mod util;
+
+/// `home`/`resolve_bin` vivem na lib compartilhada (ADR-0026); o alias mantém `nucleo::bin::...` nos chamadores.
+pub use schematize_plataforma::bin;

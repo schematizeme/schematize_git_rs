@@ -3816,16 +3816,21 @@ dependencies = [
 
 [[package]]
 name = "schematize-git"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "clap",
  "libc",
  "png",
+ "schematize_plataforma",
  "serde",
  "serde_json",
  "slint",
  "slint-build",
 ]
+
+[[package]]
+name = "schematize_plataforma"
+version = "0.2.0"
 
 [[package]]
 name = "scoped-tls"

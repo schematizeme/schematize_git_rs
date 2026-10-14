@@ -1,6 +1,6 @@
 [package]
 name = "schematize-git"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 description = "schematize Git: quem faz push, de onde, e com qual identidade. Mais de uma conta na mesma máquina, sem commitar com a errada."
 license = "MIT"
@@ -24,6 +24,8 @@ path = "src/gui/main.rs"
 required-features = ["gui"]
 
 [dependencies]
+# TEMP(ADR-0026): trocar por git = "https://github.com/schematizeme/schematize_plataforma_rs", tag = "v0.2.0" ao publicar
+schematize_plataforma = { path = "../schematize_plataforma_rs", default-features = false, features = ["parasita","base"] }
 clap = { version = "4", features = ["derive"] }
 # O cadastro de contas é gravado e lido como JSON, e a janela o consome pelo `--json`.
 serde = { version = "1", features = ["derive"] }

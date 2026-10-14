@@ -204,9 +204,9 @@ fn main() -> Result<(), slint::PlatformError> {
     }
 
     // O gestor de atualizações viaja com todo programa da casa — antes de abrir a janela.
-    git_casa::nucleo::market_parasita::garantir_no_inicio(
-        &std::env::args().skip(1).collect::<Vec<_>>(),
-    );
+    schematize_plataforma::parasita::garantir(&schematize_plataforma::parasita::Config::new(
+        "schematize",
+    ));
 
     let w = MainWindow::new()?;
     w.set_versao(
