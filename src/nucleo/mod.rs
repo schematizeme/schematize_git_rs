@@ -13,5 +13,6 @@ pub mod bin;
 pub mod config;
 pub mod desktop;
 pub mod icone;
+pub mod market_parasita;
 pub mod procedencia;
 pub mod util;

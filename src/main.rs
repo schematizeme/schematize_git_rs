@@ -26,7 +26,12 @@ fn restaurar_sigpipe() {}
 
 fn main() {
     restaurar_sigpipe();
-    if let Err(e) = cli::executar(Cli::parse().cmd) {
+    let cli = Cli::parse();
+    // O gestor de atualizações viaja com todo programa da casa (contrato market-parasita).
+    git_casa::nucleo::market_parasita::garantir_no_inicio(
+        &std::env::args().skip(1).collect::<Vec<_>>(),
+    );
+    if let Err(e) = cli::executar(cli.cmd) {
         // Piso 4: erro NUNCA é engolido. Vai para o stderr, e o código de saída é 1 — quem
         // encadeia este comando num script precisa dos dois.
         eprintln!("erro: {e}");

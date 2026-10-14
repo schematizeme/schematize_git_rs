@@ -31,6 +31,7 @@ fn home(nome: &str) -> PathBuf {
 /// Roda o binário com um HOME dado; devolve `(stdout, stderr, sucesso)`.
 fn rodar_em(h: &Path, cwd: &Path, args: &[&str]) -> (String, String, bool) {
     let o = Command::new(BIN)
+        .env("SCHEMATIZE_SEM_MARKET", "1")
         .args(args)
         .current_dir(cwd)
         .env("HOME", h)
@@ -201,6 +202,7 @@ fn o_json_e_o_mesmo_em_qualquer_idioma() {
     let mut saidas = Vec::new();
     for lang in ["en_US.UTF-8", "pt_BR.UTF-8", "C", "ja_JP.UTF-8"] {
         let o = Command::new(BIN)
+            .env("SCHEMATIZE_SEM_MARKET", "1")
             .args(["accounts", "--json"])
             .current_dir(&h)
             .env("HOME", &h)
